@@ -55,6 +55,7 @@ repositories = [
     "expressjs/express",
     "eemeli/yaml",
     "mochajs/mocha",
+    "preactjs/preact",
     "eslint/eslint",
     "prettier/prettier",
     "jestjs/jest",
