@@ -49,13 +49,12 @@ def check_vulnerability(package_version, vulnerability_range):
     else:
         return False
 repositories = [
-   # "react/react",
-   # "axios/axios",
-    #"lodash/lodash",
-    #"expressjs/express",
-    #"webpack/webpack",
-    #"eemeli/yaml",
-    #"mochajs/mocha",
+    "react/react",
+    "axios/axios",
+    "lodash/lodash",
+    "expressjs/express",
+    "eemeli/yaml",
+    "mochajs/mocha",
     "eslint/eslint",
     "prettier/prettier",
     "jestjs/jest",
