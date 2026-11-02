@@ -53,8 +53,9 @@ repositories = [
    # "axios/axios",
     #"lodash/lodash",
     #"expressjs/express",
-    "vitejs/vite",
-    "webpack/webpack",
+    #"webpack/webpack",
+    "eemeli/yaml",
+    "mochajs/mocha",
     "eslint/eslint",
     "prettier/prettier",
     "jestjs/jest",
@@ -94,11 +95,12 @@ for repos in repositories:
 ############ versions###########
     versions = package.get("versions", {})
     ti = package.get("time", {}) # list containing the version and the creation time of the version
-    all_data = []
+    
 
 ############ created at###########
     created_at = package.get("time", {}).get("created")
     for version, t in ti.items():
+        all_data = []
         row = {}
         if version == "created" or version == "modified" or "-" in version or "alpha" in version or "beta" in version or "rc" in version:
             continue
@@ -342,8 +344,8 @@ for repos in repositories:
         print("target_ghsa_high_count_90d:", target_ghsa_high_count_90d)
         print("target_ghsa_critical_count_90d:", target_ghsa_critical_count_90d)
         print("target_ghsa_unknown_count_90d:", target_ghsa_unknown_count_90d)            
-    df = pd.DataFrame(all_data)
-    df.to_csv(
+        df = pd.DataFrame(all_data)
+        df.to_csv(
     "dataset.csv",
     mode="a",
     index=False,
@@ -352,4 +354,4 @@ for repos in repositories:
     encoding="utf-8"
 )
 
-    print("CSV file successfully saved!")    
+    print("Full Package saved!")    
