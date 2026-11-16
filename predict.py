@@ -9,9 +9,9 @@ import xgboost as xgb
 from features import build_features
 
 MODEL_DIR = "Model"
-IN_PATH = "data.csv"
+IN_PATH = "Prediction Rounds - Round 1 - Input.csv"
 OUT_PATH =  "predictions.csv"
-OUTPUT = ["low", "moderate", "high", "critical"]
+OUTPUT = ["low", "moderate", "high", "critical", "unknown"]
 
 with open(os.path.join(MODEL_DIR, "model_meta.json")) as f:
     meta = json.load(f)
