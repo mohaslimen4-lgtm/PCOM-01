@@ -1,70 +1,73 @@
-import re
+"""Feature construction shared by vuln_train.py and vuln_predict.py.
 
+Same signal as the original v2 feature set (release age, 3m-vs-12m trends for
+downloads and releases, historical / recent advisory totals), so results stay
+comparable. Only difference: infinities are turned into NaN, which XGBoost handles.
+"""
 import numpy as np
 import pandas as pd
 
-TARGETS = {
-    "low":      "target_ghsa_low_count_90d",
-    "moderate": "target_ghsa_moderate_count_90d",
-    "high":     "target_ghsa_high_count_90d",
-    "critical": "target_ghsa_critical_count_90d",
-    "unknown":  "target_ghsa_unknown_count_90d",
-}
+SEVERITY_TARGETS = [
+    "target_ghsa_low_count_90d",
+    "target_ghsa_moderate_count_90d",
+    "target_ghsa_high_count_90d",
+    "target_ghsa_critical_count_90d",
+    "target_ghsa_unknown_count_90d",
+]
+
+EXCLUDED_FROM_MODEL = ["purl", "package_created_at", "published_at"] + SEVERITY_TARGETS
+SMALL = 1e-9
 
 
-def package_name(purl: pd.Series) -> pd.Series:
-    return purl.astype(str).str.rsplit("@", n=1).str[0]
+def purl_without_version(purl_col: pd.Series) -> pd.Series:
+    """'pkg:npm/@scope/name@1.2.3?x=y' -> 'pkg:npm/@scope/name' (version/qualifiers removed)."""
+    text = purl_col.astype(str).str.split("#").str[0].str.split("?").str[0]
+    return text.str.rsplit("@", n=1).str[0]
 
 
-def build_features(df: pd.DataFrame, ref_date) -> pd.DataFrame:
-    ref_date = pd.Timestamp(ref_date)
-    drop_cols = list(TARGETS.values()) + ["purl"]
-    X = df.drop(columns=drop_cols, errors="ignore").copy()
+def _window_cols(frame: pd.DataFrame, stem: str, n_months: int) -> list:
+    return [f"{stem}_M{m}" for m in range(n_months) if f"{stem}_M{m}" in frame.columns]
 
-    # Timestamps -> age in days
-    for c in ["created_at", "package_created_at", "published_at"]:
-        if c in X:
-            d = pd.to_datetime(X[c], errors="coerce", utc=True).dt.tz_localize(None)
-            X[f"{c}_age_days"] = (ref_date - d).dt.days
-            X = X.drop(columns=c)
-    if "package_created_at_age_days" in X and "published_at_age_days" in X:
-        X["created_to_published_days"] = X["package_created_at_age_days"] - X["published_at_age_days"]
 
-    for c in list(X.columns):
-        if pd.api.types.is_numeric_dtype(X[c]):
-            continue
-        conv = pd.to_numeric(X[c].astype(str).str.replace(r"[^\d.\-eE]", "", regex=True), errors="coerce")
-        if re.search(r"_M\d+$", c) or conv.notna().mean() > 0.9:
-            X[c] = conv
-        else:
-            X = X.drop(columns=c)
+def _add_trend_block(frame: pd.DataFrame, stem: str, label: str) -> None:
+    """Adds last-3-month mean, 12-month mean and their ratio for a monthly series."""
+    year_cols = _window_cols(frame, stem, 12)
+    quarter_cols = _window_cols(frame, stem, 3)
+    if year_cols and quarter_cols:
+        frame[f"{label}_last3_mean"] = frame[quarter_cols].mean(axis=1)
+        frame[f"{label}_last12_mean"] = frame[year_cols].mean(axis=1)
+        frame[f"{label}_trend_ratio"] = frame[f"{label}_last3_mean"] / (frame[f"{label}_last12_mean"] + SMALL)
 
-    # Summarise monthly snapshots (M0 = most recent)
-    month_pat = re.compile(r"^(.*)_M(\d+)$")
-    prefixes = sorted({m.group(1) for c in X.columns if (m := month_pat.match(c))})
-    prefixes = [p for p in prefixes if "days_observed" not in p]
 
-    def month_cols(prefix):
-        cols = [c for c in X.columns if re.fullmatch(rf"{re.escape(prefix)}_M\d+", c)]
-        return sorted(cols, key=lambda c: int(c.rsplit("_M", 1)[1]))
+def build_model_inputs(raw: pd.DataFrame) -> pd.DataFrame:
+    """Raw package/version rows -> numeric feature table (no ids, no targets)."""
+    work = raw.copy()
 
-    agg = {}
-    for p in prefixes:
-        cols = month_cols(p)
-        block = X[cols]
-        agg[f"{p}_sum12"] = block.sum(axis=1)
-        agg[f"{p}_mean12"] = block.mean(axis=1)
-        agg[f"{p}_max12"] = block.max(axis=1)
-        agg[f"{p}_last3_sum"] = block[cols[:3]].sum(axis=1)
-        agg[f"{p}_prev3_sum"] = block[cols[3:6]].sum(axis=1)
-        if len(cols) > 1:
-            t = np.arange(len(cols))[::-1]
-            agg[f"{p}_slope"] = np.polyfit(t, block.fillna(0).values.T, 1)[0]
+    # Age of the package when this version was published (days)
+    born = pd.to_datetime(work["package_created_at"], errors="coerce", utc=True)
+    released = pd.to_datetime(work["published_at"], errors="coerce", utc=True)
+    work["age_at_release_days"] = (released - born).dt.total_seconds() / 86400.0
 
-    agg = pd.DataFrame(agg, index=X.index)
-    ghsa_sum_cols = [c for c in agg if c.startswith("ghsa_") and c.endswith("_sum12")]
-    agg["ghsa_total_12m"] = agg[ghsa_sum_cols].sum(axis=1)
+    # Trend features
+    _add_trend_block(work, "package_downloads", "dl")
+    _add_trend_block(work, "package_stable_release_count", "rel")
 
-    static_cols = [c for c in X.columns if not re.search(r"_M\d+$", c)]
-    recent_cols = [c for c in X.columns if re.search(r"_M[0-2]$", c)]
-    return pd.concat([X[static_cols + recent_cols], agg], axis=1).replace([np.inf, -np.inf], np.nan)
+    # Advisory history
+    lifetime_cols = [
+        c for c in ["ghsa_low_count", "ghsa_moderate_count", "ghsa_high_count",
+                    "ghsa_critical_count", "ghsa_unknown_count"]
+        if c in work.columns
+    ]
+    if lifetime_cols:
+        work["advisories_lifetime_total"] = work[lifetime_cols].sum(axis=1)
+
+    last_quarter_cols = [
+        c for c in work.columns
+        if c.startswith("ghsa_") and any(c.endswith(f"_M{m}") for m in range(3))
+    ]
+    if last_quarter_cols:
+        work["advisories_last3_total"] = work[last_quarter_cols].sum(axis=1)
+
+    keep = [c for c in work.columns if c not in EXCLUDED_FROM_MODEL]
+    table = work[keep].apply(pd.to_numeric, errors="coerce")
+    return table.replace([np.inf, -np.inf], np.nan)

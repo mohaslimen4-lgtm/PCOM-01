@@ -1,0 +1,15 @@
+[project]
+name = "mlcompetitionstudentvmtemplate"
+version = "0.1.0"
+description = "Student VM API template for ML competitions"
+readme = "README.md"
+authors = [
+    { name = "leonardfeifel" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "pandas>=2.0.0",
+    "requests>=2.31.0",
+    "uvicorn>=0.30.0",
+]
