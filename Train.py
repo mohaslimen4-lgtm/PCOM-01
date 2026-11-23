@@ -29,7 +29,7 @@ def make_model(start_rate: float) -> xgb.XGBRegressor:
 
 def run_training():
     raw = pd.read_csv(DATA_FILE)
-    table = build_model_inputs(raw)          # all columns kept, same as v2
+    table = build_model_inputs(raw)         
     input_columns = list(table.columns)
 
 
