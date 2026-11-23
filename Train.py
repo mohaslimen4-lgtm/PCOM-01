@@ -17,9 +17,9 @@ ARTIFACT_FILE = "Model/vuln_count_models.joblib"
 def make_model(start_rate: float) -> xgb.XGBRegressor:
     return xgb.XGBRegressor(
         objective="count:poisson",
-        n_estimators=1000,
+        n_estimators=120,
         max_depth=4,
-        learning_rate=0.04,
+        learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
         base_score=start_rate,   # > 0 so count:poisson works even if a target is all zeros
@@ -48,7 +48,8 @@ def run_training():
         base = np.full(len(hold_pos), y.iloc[fit_pos].mean())
         print(f"{target}: holdout MAE={mean_absolute_error(y.iloc[hold_pos], pred):.4f} "
               f"(baseline {mean_absolute_error(y.iloc[hold_pos], base):.4f})")
-
+        tr = np.clip(check.predict(table.iloc[fit_pos]), 0, None)
+        print(f"   train MAE={mean_absolute_error(y.iloc[fit_pos], tr):.4f}")
         # ---- final model: all rows ----
         final = make_model(max(float(y.mean()), 1e-5))
         final.fit(table, y)
